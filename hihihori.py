@@ -24,54 +24,62 @@ class RaidHelper:
     
     def click_element(self,element):
         win_position = self.driver.get_window_rect()
-        offset_x = win_position['x']
-        offset_y = win_position['y'] + 160  # ~80px for browser chrome toolbar
-        
-        if not isinstance(element,dict):    
-            try:
-                # Scroll into view safely
-                self.driver.execute_script(
-                    "arguments[0].scrollIntoView({block: 'center', inline: 'center'});", element
-                )
-                time.sleep(0.25)
-            except Exception as e:
-                print(f"[!] scrollIntoView failed: {e}")
+        offset_x = win_position['x'] 
+        offset_y = win_position['y'] + driver.execute_script("return window.outerHeight - window.innerHeight;")
+        try:
+            # Scroll into view safely
+            self.driver.execute_script(
+                "arguments[0].scrollIntoView({block: 'center', inline: 'center'});", element
+            )
+            time.sleep(0.25)
+        except Exception as e:
+            print(f"[!] scrollIntoView failed: {e}")
 
-            rect = self.get_element_rect(element)
-        else:
-            rect = element.get("rect", None)
-            if rect is None:
-                raise ValueError("Element dictionary must contain a 'rect' key")
+        rect = self.get_element_rect(element)
 
-            viewport_height = self.driver.execute_script("return window.innerHeight;")
-            if rect["y"] + rect["height"]/2 > viewport_height or rect["y"] < 0:
-                print("[!] Raid element may be off-screen — scrolling container...")
-                # Try to scroll the main raid list (safe fallback)
-                try:
-                    self.driver.execute_script(
-                        "document.querySelector('#prt-search-list').scrollBy(0, arguments[0]);",
-                        rect["y"] - viewport_height/2
-                    )
-                    time.sleep(0.25)
-                except Exception as e:
-                    print(f"[!] Could not scroll raid list: {e}")
-            
-        screen_x = rect["x"] + offset_x
-        screen_y = rect["y"] + offset_y
+        # screen_x = rect["x"] + offset_x
+        # screen_y = rect["y"] + offset_y
 
-        x = screen_x + random.uniform(0.1, 0.4) * rect["width"]
-        y = screen_y + random.uniform(0.2, 0.4) * rect["height"]
-        
+        # x = screen_x + random.uniform(0.1, 0.3) * rect["width"]
+        # y = screen_y + random.uniform(0.1, 0.2) * rect["height"]
+
+        # x=screen_x
+        # y=screen_y
+
+        center_x = rect["x"] + rect["width"] / 2 + offset_x
+        center_y = rect["y"] + rect["height"] / 2 + offset_y
+
+        # standard deviation controls how wide the variation is (smaller = tighter around center)
+        sigma_x = rect["width"] * 0.2
+        sigma_y = rect["height"] * 0.2
+
+        x = random.gauss(center_x, sigma_x)
+        y = random.gauss(center_y, sigma_y)
+
+        # Optionally clamp to element bounds
+        # x = max(rect["x"] + offset_x, min(x, rect["x"] + rect["width"] + offset_x))
+        # y = max(rect["y"] + offset_y, min(y, rect["y"] + rect["height"] + offset_y))
+
         sx, sy = pyautogui.position()
-        #print("moving cursor to:  "+str(x)+","+str(y))
-        steps = 5
-        for i in range(steps):
+        steps = 12
+        for i in range(steps + 1):
             t = i / steps
-            px = sx + (x - sx) * (3*t**2 - 2*t**3)
-            py = sy + (y - sy) * (3*t**2 - 2*t**3)
-            pyautogui.moveTo(px, py, duration=0.01)
-        time.sleep(random.uniform(0.05, 0.15))
-        pyautogui.click()
+            ease = 3*t**2 - 2*t**3  # smooth ease-in-out curve
+            px = sx + (x - sx) * ease
+            py = sy + (y - sy) * ease
+            pyautogui.moveTo(px, py)
+            time.sleep(0.001)  # small frame delay
+        
+        for _ in range(random.randint(2, 4)):
+            pyautogui.moveTo(
+                x + random.uniform(-2, 2),
+                y + random.uniform(-2, 2),
+                duration=random.uniform(0.01, 0.03)
+            )
+        hold_time = random.uniform(0.05, 0.1)  # 50–250 ms press
+        pyautogui.mouseDown()
+        time.sleep(hold_time)
+        pyautogui.mouseUp()
 
     def get_element_rect(self,element):
         return  self.driver.execute_script("""
@@ -83,11 +91,71 @@ class RaidHelper:
                                                 height: rect.height
                                             };
                                         """, element)
+    
+    def handle_popup(self, timeout=1):
+        """
+        Detects and handles any popup that appears in the game.
+        Returns a string status based on what popup was found.
+        """
+        try:
+            # Wait briefly for *any* popup to appear
+            popup = WebDriverWait(self.driver, timeout).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".common-pop-error.pop-show"))
+            )
+            popup_text_elem = popup.find_element(By.CSS_SELECTOR, "#popup-body")
+            popup_text = popup_text_elem.text.strip()
+
+            print(f"[!] Popup detected: '{popup_text}'")
+
+            # --- Match known popups ---
+            if "This raid battle is full" in popup_text:
+                result = "raid_full"
+            elif "You don’t have enough AP" in popup_text or "not enough AP" in popup_text.lower():
+                result = "not_enough_ap"
+            elif "You can only provide backup in up to three raid battles at once." in popup_text:
+                result = "three_raid"
+            elif "verification" in popup_text:
+                result = "captcha"
+            elif "Check your pending battles." in popup_text:
+                result = "toomuch_pending"
+            else:
+                result = "unknown_popup"
+
+            # --- Dismiss popup ---
+            try:
+                ok_button = popup.find_element(By.CSS_SELECTOR, ".btn-usual-ok")
+                self.click_element(ok_button)
+                time.sleep(1.5)
+            except Exception:
+                print("[!] Could not find OK button to close popup.")
+
+            return result
+
+        except TimeoutException:
+            # No popup appeared
+            return None
+        
+    def refresh_raid_list(self):
+        refresh_btn = WebDriverWait(self.driver, 2).until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, ".btn-search-refresh")
+                )
+            )
+        if refresh_btn:
+            self.click_element(refresh_btn)
+        else:
+            print("refresh not found")
 
     def pick_raid(self):
         print("[1] Finding suitable raid...")
         try:
-            self.driver.get("https://game.granbluefantasy.jp/#quest/assist")  # replace with actual URL
+            if "#quest/assist" not in driver.current_url:
+                self.driver.get("https://game.granbluefantasy.jp/#quest/assist")
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "#prt-search-list"))
+            )
+
+                
             raid_rooms = WebDriverWait(self.driver, 20).until(
                 EC.presence_of_all_elements_located(
                     (By.CSS_SELECTOR, "div#prt-search-list div.btn-multi-raid.lis-raid.search")
@@ -95,7 +163,7 @@ class RaidHelper:
             )
 
             raids_data = []
-            HP_THRESHOLD = 35
+            HP_THRESHOLD = 30
             for raid in raid_rooms:
                 rect = self.get_element_rect(raid)
                 raid_info = raid.find_element("css selector", ".prt-raid-info")
@@ -107,27 +175,33 @@ class RaidHelper:
                 hp_style = raid_info.find_element(By.CSS_SELECTOR, ".prt-raid-gauge-inner").get_attribute("style")
                 hp_percent = float(hp_style.split("width:")[1].split("%")[0])
                 
-                raids_data.append({"id":raid_id,"name": raid_name, "hp": hp_percent, "rect": rect,"host":raid_host})
-
-            target_raid = next(r for r in raids_data if r["hp"] >= HP_THRESHOLD)
-            if (not target_raid):
+                raids_data.append({"id":raid_id,"name": raid_name, "hp": hp_percent, "rect": rect,"host":raid_host,"raid":raid})
+            try:
+                target_raid = next(r for r in raids_data if r["hp"] >= HP_THRESHOLD)
+            except:
                 return "skip"
             print("target: "+ str(target_raid))
-            self.click_element(target_raid)
-            try:
-                popup = WebDriverWait(self.driver, 1).until(
-                    EC.visibility_of_element_located((By.XPATH, "//*[contains(text(), \"This raid battle is full.\")]"))
-                )
-                print("[!] Raid is full, handling popup...")
-                ok_button = self.driver.find_element(By.CSS_SELECTOR, ".btn-usual-ok")
-                ok_button.click()
-                time.sleep(1)
-                return "skip"  # signal the main loop to pick another raid
-            except TimeoutException:
-                print("[✓] Joined raid successfully.")
-                return "next"
+            self.click_element(target_raid["raid"])
+
+        # --- Handle possible popups ---
+            popup_result = self.handle_popup(timeout=2)
+            if popup_result == "raid_full":
+                print("[!] Raid is full, skipping...")
+                return "skip"
+            elif popup_result == "not_enough_ap":
+                print("[!] Not enough AP — triggering AP recovery routine...")
+                return "retry"
+            elif popup_result == "three_raid":
+                print("[!] Three raid joined")
+                return "three_raid"
+            elif popup_result == "unknown_popup":
+                print("[!] Unknown popup — skipping safely.")
+                return "skip"
+            
+            print("[✓] Joined raid successfully.")
+            return "next"
         except Exception as e:
-            print("error: "+e)
+            print("error: "+str(e))
             return "error"
         
 
@@ -205,8 +279,11 @@ class RaidHelper:
                 else:
                     print("[!] Desired summon not found — using first summon in type0.")
                     # Step 1: Click type0’s tab (mapped to icon-supporter-type-7)
-                    fallback_tab_btn = self.driver.find_element(By.CSS_SELECTOR, ".icon-supporter-type-7")
-                    self.click_element(fallback_tab_btn)
+                    try:
+                        fallback_tab_btn = self.driver.find_element(By.CSS_SELECTOR, ".icon-supporter-type-7")
+                        self.click_element(fallback_tab_btn)
+                    except:
+                        return("error")
 
                     # Step 2: Find the first summon in type0 list
                     first_summon = WebDriverWait(self.driver, 0.5).until(
@@ -279,8 +356,73 @@ class RaidHelper:
             print("[×] Timeout waiting for attack button — probably not in battle")
             return "error"
 
+    def clean_raid_queue(self):
+        try:
+            self.driver.get("https://game.granbluefantasy.jp/#quest/assist")
 
 
+            pending_battle_btn = WebDriverWait(self.driver, 5).until(
+                    EC.presence_of_element_located(
+                        (By.CSS_SELECTOR,".btn-unconfirmed-result")
+                    ))
+            if pending_battle_btn:
+                self.click_element(pending_battle_btn)
+                pending_battle_list_container= WebDriverWait(self.driver, 5).until(
+                    EC.presence_of_element_located(
+                        (By.CSS_SELECTOR,".prt-raid-list")
+                    ))
+                if pending_battle_list_container:
+                    try:
+                        WebDriverWait(self.driver, 3).until(
+                                EC.presence_of_element_located((By.ID, "prt-unclaimed-list"))
+                            )
+                        while True:
+                            raids = WebDriverWait(self.driver, 3).until(
+                                EC.visibility_of_all_elements_located(
+                                    (By.CSS_SELECTOR, "#prt-unclaimed-list .btn-multi-raid.lis-raid")
+                                )
+                            )
+                            if raids:
+                                raid_id = raids[0].get_attribute("data-raid-id")
+                                self.see_battle_result_by_id(raid_id)
+                            if not raids:
+                                print("[✓] No pending raids left.")
+                                break
+
+                    except TimeoutException:
+                        print("[!] No pending raids found (timeout).")
+                        return "error"
+
+
+        except TimeoutException:
+            return "error"
+        
+    def see_battle_result_by_id(self,raid_id):
+        print(f"[→] Opening result for raid {raid_id}")
+        selector = f"#prt-unclaimed-list .btn-multi-raid.lis-raid[data-raid-id='{raid_id}']"
+        battle_elem = WebDriverWait(self.driver, 5).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+        )
+        self.click_element(battle_elem)
+
+        # Process result
+        try:
+            result_ok_btn = WebDriverWait(self.driver, 3).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".btn-usual-ok"))
+            )
+            self.click_element(result_ok_btn)
+            time.sleep(random.uniform(0.2, 0.7))
+
+            self.driver.back()
+
+            # Wait until we’re back to the pending list
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "#prt-unclaimed-list .btn-multi-raid.lis-raid"))
+            )
+            print(f"[✓] Finished raid {raid_id}")
+
+        except Exception as e:
+            print(f"[!] Error processing raid {raid_id}: {e}")
 
 
 chrome_options = Options()
@@ -305,14 +447,32 @@ steps = [
         ]
 
 
-for i in range (5):
+for i in range (1000):
+    emergency_exit=False
     for step in steps:
         status = step()
-        if status!="next":
+        if status =="next":
+            continue
+        elif status =="skip" or status=="error":
+            continue
+        elif status =="three_raid":
+            print("three raid test")
+            for i in range(math.floor(random.uniform(1,5))):
+                rh.refresh_raid_list()
+            time.sleep(random.uniform(15, 40))
+            for i in range(math.floor(random.uniform(1,5))):
+                rh.refresh_raid_list()
+            continue
+        elif status =="toomuch_pending":
+            print("too much pending")
+            rh.clean_raid_queue()
+        elif status =="captcha":
+            print("captcha arised, exiting")
+            emergency_exit=True
+            break
+        elif status!="next":
             print("failed, exiting")
             break
-        if status =="skip":
-            continue
-        
-
+    if emergency_exit:
+        break
 
