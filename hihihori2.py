@@ -8,6 +8,10 @@ import time
 from bezier import Curve  
 import numpy as np
 
+import csv
+from datetime import datetime
+import os
+
 import undetected_chromedriver as uc  # Alternative to regular Chrome driver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -20,6 +24,54 @@ class RaidHelper:
     
     def __init__(self,driver):
         self.driver=driver
+        self.log_filename = datetime.today().strftime('%Y-%m-%d')+"_raid_log.html"
+        self._initialize_log_file()
+
+
+    def _initialize_log_file(self):
+            """Creates a styled HTML log file with a table header if it doesn't exist."""
+            # If the file already exists, we do nothing.
+            if os.path.exists(self.log_filename):
+                return
+                
+            print(f"[i] Log file not found. Creating '{self.log_filename}'...")
+            # Create the HTML file with a header and some CSS for styling
+            with open(self.log_filename, 'w', encoding='utf-8') as f:
+                f.write("""<!DOCTYPE html>
+                    <html lang="en">
+                    <head>
+                        <meta charset="UTF-8">
+                        <title>GBF Raid Loot Log</title>
+                        <style>
+                            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; color: #333; }
+                            h1 { text-align: center; color: #1d2129; }
+                            table { border-collapse: collapse; width: 95%; margin: 20px auto; box-shadow: 0 2px 8px rgba(0,0,0,0.1); background-color: #fff; }
+                            th, td { border: 1px solid #ddd; text-align: left; padding: 12px; vertical-align: middle; }
+                            thead { background-color: #4267B2; color: white; }
+                            tr:nth-child(even) { background-color: #f2f2f2; }
+                            tr:hover { background-color: #e9ebee; }
+                            .loot-cell { display: flex; flex-wrap: wrap; align-items: center; }
+                            .loot-item { display: inline-block; text-align: center; position: relative; margin: 4px; }
+                            .loot-item img { width: 48px; height: 48px; border-radius: 4px; }
+                            .loot-item .quantity { position: absolute; bottom: -2px; right: -2px; background-color: rgba(0,0,0,0.75); color: white; border-radius: 6px; padding: 2px 5px; font-size: 11px; font-weight: bold; }
+                        </style>
+                    </head>
+                    <body>
+                        <h1>GBF Raid Loot Log</h1>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Raid ID</th>
+                                    <th>Raid Name</th>
+                                    <th>Loot Collected</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            </tbody>
+                        </table>
+                    </body>
+                    </html>""")
 
 
     @staticmethod
@@ -56,10 +108,17 @@ class RaidHelper:
         offset_x = win_position['x']
         offset_y = win_position['y'] + self.driver.execute_script("return window.outerHeight - window.innerHeight;")
         try:
+            # First, just ensure the element is in the viewport. 'nearest' is less robotic.
             self.driver.execute_script(
-                "arguments[0].scrollIntoView({block: 'center', inline: 'center'});", element
+                "arguments[0].scrollIntoView({block: 'nearest', inline: 'nearest'});", element
             )
-            time.sleep(0.25)
+            time.sleep(random.uniform(0.1, 0.3)) # Pause as if to locate the element
+
+            # Add a small, random "adjustment" scroll. Humans rarely stop perfectly.
+            scroll_offset = random.randint(-30, 30)
+            self.driver.execute_script(f"window.scrollBy(0, {scroll_offset});")
+            time.sleep(random.uniform(0.2, 0.4)) # A final pause before moving the mouse
+
         except Exception as e:
             print(f"[!] scrollIntoView failed: {e}")
 
@@ -89,8 +148,24 @@ class RaidHelper:
         duration_per_step = total_duration / num_steps
 
         # 4. Loop through the points and move with a calculated duration (NO time.sleep)
-        for point in points:
-            pyautogui.moveTo(point[0], point[1], duration=duration_per_step)
+        for i, point in enumerate(points):
+            # Calculate progress (from 0.0 to 1.0)
+            progress = i / num_steps
+            # Apply the sine easing function
+            ease_value = (math.sin(math.pi * progress - math.pi / 2) + 1) / 2
+            
+            # The middle of the movement should be fastest, ends should be slowest.
+            # We distribute the total duration according to the ease curve.
+            # This is a bit abstract, a simpler way is to just vary the duration.
+            
+            # A simpler but still effective approach:
+            # Make the start and end of the movement slower.
+            if progress < 0.2 or progress > 0.8:
+                step_duration = duration_per_step * 1.5 # 50% slower
+            else:
+                step_duration = duration_per_step * 0.75 # 25% faster
+        
+            pyautogui.moveTo(point[0], point[1], duration=step_duration)
 
         # Add tiny "correction" movements at the end for more realism
         for _ in range(random.randint(1, 3)):
@@ -105,6 +180,33 @@ class RaidHelper:
         pyautogui.mouseDown()
         time.sleep(hold_time)
         pyautogui.mouseUp()
+        
+    def perform_browse_scrolling(self):
+        """
+        With a random probability, performs a series of up/down scrolls
+        to simulate a human browsing the list before making a choice.
+        """
+        # Only perform this "browsing" simulation sometimes (e.g., 60% of the time)
+        if random.random() < 0.6:
+            print("[i] Simulating human-like 'browse' scrolling...")
+            
+            # Decide on a random number of scrolls to perform
+            num_scrolls = random.randint(2, 5)
+            
+            for i in range(num_scrolls):
+                # Scroll a random amount (positive is down, negative is up)
+                scroll_amount = random.randint(250, 600)
+                if random.random() < 0.5: # 50% chance to scroll up
+                    scroll_amount *= -1
+                    
+                self.driver.execute_script(f"window.scrollBy(0, {scroll_amount});")
+                
+                # Pause between scrolls, as if reading
+                time.sleep(random.uniform(0.4, 0.9))
+            
+            # A final scroll back towards the top to reset the view
+            self.driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(random.uniform(0.3, 0.6))
 
     def get_element_rect(self,element):
         return  self.driver.execute_script("""
@@ -174,27 +276,35 @@ class RaidHelper:
             WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "#prt-search-list"))
             )
+
+            self.perform_browse_scrolling()
+
+
+
             raid_rooms = WebDriverWait(self.driver, 20).until(
                 EC.presence_of_all_elements_located(
                     (By.CSS_SELECTOR, "div#prt-search-list div.btn-multi-raid.lis-raid.search")
                 )
             )
             
-            raids_data = []
+            eligible_raids = []
             HP_THRESHOLD = 30
             for raid in raid_rooms:
                 try:
                     hp_style = raid.find_element(By.CSS_SELECTOR, ".prt-raid-gauge-inner").get_attribute("style")
                     hp_percent = float(hp_style.split("width:")[1].split("%")[0])
+                    
                     if hp_percent >= HP_THRESHOLD:
-                        raids_data.append({"hp": hp_percent, "raid_element": raid})
+                        # Instead of acting immediately, add the valid raid to our list of choices
+                        eligible_raids.append({"hp": hp_percent, "raid_element": raid})
                 except (NoSuchElementException, IndexError):
                     continue
             
-            if not raids_data:
+            if not eligible_raids:
+                 print("[i] No raids met the HP threshold. Skipping.")
                  return "skip"
 
-            target_raid = raids_data[0] # Simplest strategy: pick the first eligible one
+            target_raid = random.choice(eligible_raids)
             print(f"Target raid found with {target_raid['hp']}% HP.")
             self.click_element(target_raid["raid_element"])
 
@@ -336,7 +446,8 @@ class RaidHelper:
                 
                 print(f"[i] Found {len(raids)} pending raid(s). Clearing the first one.")
                 raid_id = raids[0].get_attribute("data-raid-id")
-                self.see_battle_result_by_id(raid_id)
+                raid_name = raids[0].find_element(By.CSS_SELECTOR, ".txt-raid-name").text.strip()
+                self.see_battle_result_by_id(raid_id,raid_name)
                 
             print("[i] Returning to the raid search page.")
             self.driver.get("https://game.granbluefantasy.jp/#quest/assist")
@@ -350,8 +461,79 @@ class RaidHelper:
         except Exception as e:
             print(f"[!!] An unexpected error occurred during raid cleanup: {e}")
             return "error"
+    
+
+    def log_raid_results(self, raid_id, raid_name):
+            """Scrapes loot and writes it as a new row in the HTML log file."""
+            print(f"[i] Logging results for raid {raid_id} to HTML...")
+            try:
+                loot_container = WebDriverWait(self.driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, ".prt-item-list"))
+                )
+                loot_items = loot_container.find_elements(By.CSS_SELECTOR, ".lis-treasure.btn-treasure-item")
+                
+                if not loot_items:
+                    print("[i] No loot items found to log.")
+                    return
+
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                # 1. Build the HTML string for all loot items in this raid
+                loot_html_parts = []
+                for item in loot_items:
+                    try:
+                        img_element = item.find_element(By.CSS_SELECTOR, ".img-treasure-item")
+                        item_id = img_element.get_attribute("alt")
+                        item_image_url = img_element.get_attribute("src")
+                        
+                        quantity = 1
+                        try:
+                            count_element = item.find_element(By.CSS_SELECTOR, ".prt-article-count")
+                            quantity_text = count_element.text.strip().replace('x', '')
+                            if quantity_text:
+                                quantity = int(quantity_text)
+                        except NoSuchElementException:
+                            pass # Quantity remains 1
+
+                        # Create a styled div for each item with a quantity overlay
+                        loot_html_parts.append(f"""
+                            <div class="loot-item">
+                                <img src="{item_image_url}" alt="ID: {item_id}" title="Item ID: {item_id}">
+                                <span class="quantity">x{quantity}</span>
+                            </div>""")
+                    except (NoSuchElementException, StaleElementReferenceException) as e:
+                        print(f"[!] Could not process a loot item, skipping it: {e}")
+
+                loot_html_string = "".join(loot_html_parts)
+
+                # 2. Build the full HTML table row for this raid entry
+                new_row_html = f"""
+                <tr>
+                    <td>{timestamp}</td>
+                    <td>{raid_id}</td>
+                    <td>{raid_name}</td>
+                    <td class="loot-cell">{loot_html_string}</td>
+                </tr>"""
+
+                # 3. Read the existing log, insert the new row, and write it back
+                with open(self.log_filename, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Insert the new row just before the closing <tbody> tag
+                content = content.replace("</tbody>", new_row_html + "\n</tbody>")
+                
+                with open(self.log_filename, 'w', encoding='utf-8') as f:
+                    f.write(content)
+
+                print(f"[✓] Successfully logged {len(loot_items)} item type(s) for raid {raid_id}.")
+
+            except TimeoutException:
+                print("[!] Loot container '.prt-item-list' not found. Nothing to log.")
+            except Exception as e:
+                print(f"[!!] An unexpected error occurred during HTML loot logging: {e}")
+
         
-    def see_battle_result_by_id(self,raid_id):
+    def see_battle_result_by_id(self,raid_id,raid_name):
         print(f"[→] Opening result for raid {raid_id}")
         selector = f"#prt-unclaimed-list .btn-multi-raid.lis-raid[data-raid-id='{raid_id}']"
         battle_elem = WebDriverWait(self.driver, 5).until(
@@ -361,11 +543,12 @@ class RaidHelper:
 
         # Process result
         try:
-            result_ok_btn = WebDriverWait(self.driver, 3).until(
+            result_ok_btn = WebDriverWait(self.driver, 2).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, ".btn-usual-ok"))
             )
             self.click_element(result_ok_btn)
             time.sleep(random.uniform(0.2, 0.7))
+            self.log_raid_results(raid_id,raid_name)
 
             self.driver.back()
 
@@ -377,42 +560,53 @@ class RaidHelper:
 
         except Exception as e:
             print(f"[!] Error processing raid {raid_id}: {e}")
+            return "next"
 
 # --- Main script execution ---
-chrome_options = uc.ChromeOptions()
-chrome_options.add_argument("--start-maximized")
-chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+try:
+    chrome_options = uc.ChromeOptions()
+    chrome_options.add_argument("--start-maximized")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 
 
-driver = uc.Chrome(
-    options=chrome_options,
-    user_data_dir=r"C:\\Selenium\\ChromeProfile" # Use 'r' for raw string to avoid path issues
-)
-rh = RaidHelper(driver)
+    driver = uc.Chrome(
+        options=chrome_options,
+        user_data_dir=r"C:\\Selenium\\ChromeProfile" # Use 'r' for raw string to avoid path issues
+    )
+    rh = RaidHelper(driver)
+    rh.clean_raid_queue()
 
-# Main loop
-for i in range(1000):
-    emergency_exit=False
-    status = rh.pick_raid()
+#     # Main loop
+#     for i in range(1000):
+#         emergency_exit=False
+#         status = rh.pick_raid()
 
-    if status == "next":
-        if rh.select_summmon() == "next":
-            if rh.join_raid() == "next":
-                rh.do_raid() # Final step, loop continues regardless of outcome
-    elif status == "toomuch_pending":
-        rh.clean_raid_queue()
-    elif status == "three_raid":
-        print("Three raids joined, waiting before refresh...")
-        time.sleep(random.uniform(15, 40))
-        rh.refresh_raid_list()
-    elif status == "captcha":
-        print("CAPTCHA detected. Stopping script.")
-        emergency_exit=True
-        break
-    elif status in ["skip", "error", "raid_full", "not_enough_ap","ended", "unknown_popup"]:
-        print(f"Status is '{status}'. Refreshing and retrying.")
-        rh.refresh_raid_list()
-        time.sleep(random.uniform(1, 3))
-    else:
-        print(f"Unhandled status: '{status}'. Stopping.")
-        break
+#         if status == "next":
+#             if rh.select_summmon() == "next":
+#                 if rh.join_raid() == "next":
+#                     rh.do_raid() # Final step, loop continues regardless of outcome
+#                     think_time = random.uniform(2, 5) # 5 to 12 seconds
+#                     print(f"[i] Raid cycle complete. Simulating 'think time' for {think_time:.2f} seconds...")
+#                     time.sleep(think_time)
+#         elif status == "toomuch_pending":
+#             rh.clean_raid_queue()
+#         elif status == "three_raid":
+#             print("Three raids joined, waiting before refresh...")
+#             time.sleep(random.uniform(15, 40))
+#             rh.refresh_raid_list()
+#         elif status == "captcha":
+#             print("CAPTCHA detected. Stopping script.")
+#             emergency_exit=True
+#             break
+#         elif status in ["skip", "error", "raid_full", "not_enough_ap","ended", "unknown_popup"]:
+#             print(f"Status is '{status}'. Refreshing and retrying.")
+#             rh.refresh_raid_list()
+#             time.sleep(random.uniform(1, 3))
+#         else:
+#             print(f"Unhandled status: '{status}'. Stopping.")
+#             break
+finally:
+    print("[i] Script finished or was interrupted.")
+    if driver:
+        print("[i] Closing browser...")
+        driver.quit()
