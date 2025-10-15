@@ -576,35 +576,35 @@ try:
     rh = RaidHelper(driver)
     rh.clean_raid_queue()
 
-#     # Main loop
-#     for i in range(1000):
-#         emergency_exit=False
-#         status = rh.pick_raid()
+    # Main loop
+    for i in range(1000):
+        emergency_exit=False
+        status = rh.pick_raid()
 
-#         if status == "next":
-#             if rh.select_summmon() == "next":
-#                 if rh.join_raid() == "next":
-#                     rh.do_raid() # Final step, loop continues regardless of outcome
-#                     think_time = random.uniform(2, 5) # 5 to 12 seconds
-#                     print(f"[i] Raid cycle complete. Simulating 'think time' for {think_time:.2f} seconds...")
-#                     time.sleep(think_time)
-#         elif status == "toomuch_pending":
-#             rh.clean_raid_queue()
-#         elif status == "three_raid":
-#             print("Three raids joined, waiting before refresh...")
-#             time.sleep(random.uniform(15, 40))
-#             rh.refresh_raid_list()
-#         elif status == "captcha":
-#             print("CAPTCHA detected. Stopping script.")
-#             emergency_exit=True
-#             break
-#         elif status in ["skip", "error", "raid_full", "not_enough_ap","ended", "unknown_popup"]:
-#             print(f"Status is '{status}'. Refreshing and retrying.")
-#             rh.refresh_raid_list()
-#             time.sleep(random.uniform(1, 3))
-#         else:
-#             print(f"Unhandled status: '{status}'. Stopping.")
-#             break
+        if status == "next":
+            if rh.select_summmon() == "next":
+                if rh.join_raid() == "next":
+                    rh.do_raid() # Final step, loop continues regardless of outcome
+                    think_time = random.uniform(2, 5) # 5 to 12 seconds
+                    print(f"[i] Raid cycle complete. Simulating 'think time' for {think_time:.2f} seconds...")
+                    time.sleep(think_time)
+        elif status == "toomuch_pending":
+            rh.clean_raid_queue()
+        elif status == "three_raid":
+            print("Three raids joined, waiting before refresh...")
+            time.sleep(random.uniform(15, 40))
+            rh.refresh_raid_list()
+        elif status == "captcha":
+            print("CAPTCHA detected. Stopping script.")
+            emergency_exit=True
+            break
+        elif status in ["skip", "error", "raid_full", "not_enough_ap","ended", "unknown_popup"]:
+            print(f"Status is '{status}'. Refreshing and retrying.")
+            rh.refresh_raid_list()
+            time.sleep(random.uniform(1, 3))
+        else:
+            print(f"Unhandled status: '{status}'. Stopping.")
+            break
 finally:
     print("[i] Script finished or was interrupted.")
     if driver:

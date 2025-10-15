@@ -1,0 +1,5 @@
+bezier==2024.6.20
+numpy==2.3.4
+pyautogui==0.9.54
+selenium==4.36.0
+undetected_chromedriver==3.5.5
