@@ -352,18 +352,39 @@ class RaidHelper:
             return "next"
         except TimeoutException:
             try:
-                # Fallback summon selection logic here
-                print("[i] No auto-summon. Selecting fallback summon...")
-                fallback_tab_btn = self.driver.find_element(By.CSS_SELECTOR, ".icon-supporter-type-7")
-                self.click_element(fallback_tab_btn)
-                
-                first_summon = WebDriverWait(self.driver, 2).until(
-                    EC.presence_of_element_located(
-                        (By.CSS_SELECTOR, ".prt-supporter-attribute.type0 .btn-supporter")
+                support_level = "Lvl 200"
+                support_name = "Grand"
+
+                xpath = f"""
+                //div[contains(@class, 'supporter-summon') and
+                    .//span[@class='txt-summon-level' and normalize-space(text())='{support_level}'] and
+                    .//span[@class='js-summon-name' and normalize-space(text())='{support_name}']]
+                """
+                support_elems = driver.find_elements(By.XPATH, xpath)
+                if support_elems: 
+                    attribute_tab_btn = self.find_support_tab_from_elem(support_elems[0])
+                    self.click_element(attribute_tab_btn)
+                    self.click_element(support_elems[0])
+                else:
+                    print("[!] Desired summon not found — using first summon in type0.")
+                    # Step 1: Click type0’s tab (mapped to icon-supporter-type-7)
+                    try:
+                        fallback_tab_btn = self.driver.find_element(By.CSS_SELECTOR, ".icon-supporter-type-7")
+                        self.click_element(fallback_tab_btn)
+                    except:
+                        return("error")
+
+                    # Step 2: Find the first summon in type0 list
+                    first_summon = WebDriverWait(self.driver, 0.5).until(
+                        EC.presence_of_element_located(
+                            (By.CSS_SELECTOR, ".prt-supporter-attribute.type0 .btn-supporter")
+                        )
                     )
-                )
-                self.click_element(first_summon)
+
+                    print("[→] Selecting first available summon...")
+                    self.click_element(first_summon)
                 return "next"
+             
             except Exception as e:
                 print(f"Error during fallback summon selection: {e}")
                 return "error"
