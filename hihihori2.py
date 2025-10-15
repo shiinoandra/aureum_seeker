@@ -5,8 +5,10 @@ from os import path
 import pyautogui
 import random
 import time
+from bezier import Curve  
+import numpy as np
 
-from selenium import webdriver
+import undetected_chromedriver as uc  # Alternative to regular Chrome driver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -18,11 +20,41 @@ class RaidHelper:
     
     def __init__(self,driver):
         self.driver=driver
-    
-    def click_element(self,element):
+
+
+    @staticmethod
+    def bezier_curve(start, end, steps=25):
+        """
+        Calculates the points for a Bezier curve and returns them as a list of tuples.
+        """
+        # Use the same logic as before to generate control points
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        control1 = (
+            start[0] + dx * random.uniform(0.2, 0.4) + random.uniform(-dx*0.1, dx*0.1),
+            start[1] + dy * random.uniform(0.2, 0.4) + random.uniform(-dy*0.1, dy*0.1)
+        )
+        control2 = (
+            start[0] + dx * random.uniform(0.6, 0.8) + random.uniform(-dx*0.1, dx*0.1),
+            start[1] + dy * random.uniform(0.6, 0.8) + random.uniform(-dy*0.1, dy*0.1)
+        )
+        
+        nodes = np.asfortranarray([
+            [start[0], control1[0], control2[0], end[0]],
+            [start[1], control1[1], control2[1], end[1]],
+        ])
+        
+        curve = Curve(nodes, degree=3)
+        
+        # Evaluate the curve at 'steps' number of points
+        points_on_curve = curve.evaluate_multi(np.linspace(0, 1, steps))
+        
+        # Return as a list of (x, y) tuples
+        return list(zip(points_on_curve[0], points_on_curve[1]))
+        
+    def click_element(self, element):
         win_position = self.driver.get_window_rect()
-        offset_x = win_position['x'] 
-        offset_y = win_position['y'] + driver.execute_script("return window.outerHeight - window.innerHeight;")
+        offset_x = win_position['x']
+        offset_y = win_position['y'] + self.driver.execute_script("return window.outerHeight - window.innerHeight;")
         try:
             self.driver.execute_script(
                 "arguments[0].scrollIntoView({block: 'center', inline: 'center'});", element
@@ -32,29 +64,44 @@ class RaidHelper:
             print(f"[!] scrollIntoView failed: {e}")
 
         rect = self.get_element_rect(element)
+
         center_x = rect["x"] + rect["width"] / 2 + offset_x
         center_y = rect["y"] + rect["height"] / 2 + offset_y
+
         sigma_x = rect["width"] * 0.2
         sigma_y = rect["height"] * 0.2
+
         x = random.gauss(center_x, sigma_x)
         y = random.gauss(center_y, sigma_y)
-        sx, sy = pyautogui.position()
-        steps = 12
-        for i in range(steps + 1):
-            t = i / steps
-            ease = 3*t**2 - 2*t**3
-            px = sx + (x - sx) * ease
-            py = sy + (y - sy) * ease
-            pyautogui.moveTo(px, py)
-            time.sleep(0.001)
-        
-        for _ in range(random.randint(2, 4)):
-            pyautogui.moveTo(
-                x + random.uniform(-2, 2),
-                y + random.uniform(-2, 2),
+
+        # Get start and end positions
+        start_pos = pyautogui.position()
+        end_pos = (x, y)
+
+         # 1. Define total duration and number of steps for the movement
+        total_duration = random.uniform(0.1, 0.3)
+        num_steps = 10
+
+        # 2. Get the list of all points along the curve
+        points = RaidHelper.bezier_curve(start_pos, end_pos, steps=num_steps)
+
+        # 3. Calculate the duration for each individual step
+        duration_per_step = total_duration / num_steps
+
+        # 4. Loop through the points and move with a calculated duration (NO time.sleep)
+        for point in points:
+            pyautogui.moveTo(point[0], point[1], duration=duration_per_step)
+
+        # Add tiny "correction" movements at the end for more realism
+        for _ in range(random.randint(1, 3)):
+            pyautogui.move(
+                random.randint(-2, 2),
+                random.randint(-2, 2),
                 duration=random.uniform(0.01, 0.03)
             )
-        hold_time = random.uniform(0.05, 0.1)
+
+        # Click with a variable hold time
+        hold_time = random.uniform(0.07, 0.1)
         pyautogui.mouseDown()
         time.sleep(hold_time)
         pyautogui.mouseUp()
@@ -332,17 +379,15 @@ class RaidHelper:
             print(f"[!] Error processing raid {raid_id}: {e}")
 
 # --- Main script execution ---
-chrome_options = Options()
+chrome_options = uc.ChromeOptions()
 chrome_options.add_argument("--start-maximized")
 chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-chrome_options.add_experimental_option("detach", True)
-chrome_options.add_argument(r"user-data-dir=C:\Selenium\ChromeProfile")
 
-chrome_driver_exe_path = abspath("chromedriver.exe")
-assert path.exists(chrome_driver_exe_path), 'chromedriver.exe not found!'
 
-service = Service(executable_path=chrome_driver_exe_path)
-driver = webdriver.Chrome(service=service, options=chrome_options)
+driver = uc.Chrome(
+    options=chrome_options,
+    user_data_dir=r"C:\\Selenium\\ChromeProfile" # Use 'r' for raw string to avoid path issues
+)
 rh = RaidHelper(driver)
 
 # Main loop
