@@ -73,6 +73,20 @@ class RaidHelper:
                     </body>
                     </html>""")
 
+    def play_alert_sound(self, sound_file="alert.mp3"):
+        """
+        Plays a sound file to alert the user.
+        """
+        try:
+            # Check if the sound file exists before trying to play it
+            if os.path.exists(sound_file):
+                print("[!!!] PLAYING CAPTCHA ALERT SOUND [!!!]")
+                playsound(sound_file)
+            else:
+                print(f"[!] Alert sound file not found at '{sound_file}'")
+        except Exception as e:
+            print(f"[!] Error playing sound. Make sure 'playsound' is installed correctly.")
+            print(f"[!] Details: {e}")
 
     @staticmethod
     def bezier_curve(start, end, steps=25):
@@ -227,19 +241,24 @@ class RaidHelper:
             popup_text = popup.find_element(By.CSS_SELECTOR, "#popup-body").text.strip()
             print(f"[!] Popup detected: '{popup_text}'")
 
-            result = "unknown_popup"
-            if "This raid battle is full" in popup_text:
+            # List of keywords to check for (all in lowercase)
+            captcha_keywords = ["verification", "verify", "captcha"]
+            # Check if any of the keywords are in the lowercased popup text
+            if any(keyword in popup_text.lower() for keyword in captcha_keywords):
+                result = "captcha"
+            # --- END OF IMPROVEMENT ---
+            elif "This raid battle is full" in popup_text:
                 result = "raid_full"
             elif "You don’t have enough AP" in popup_text or "not enough AP" in popup_text.lower():
                 result = "not_enough_ap"
             elif "You can only provide backup in up to three raid battles at once." in popup_text:
                 result = "three_raid"
-            elif "verification" in popup_text:
-                result = "captcha"
             elif "Check your pending battles." in popup_text:
                 result = "toomuch_pending"
             elif "This raid battle has already ended" in popup_text:
                 result = "ended"
+            else:
+                result = "unknown_popup"
 
             try:
                 ok_button = popup.find_element(By.CSS_SELECTOR, ".btn-usual-ok")
@@ -617,6 +636,7 @@ try:
             rh.refresh_raid_list()
         elif status == "captcha":
             print("CAPTCHA detected. Stopping script.")
+            rh.play_alert_sound() # Play the alert sound
             emergency_exit=True
             break
         elif status in ["skip", "error", "raid_full", "not_enough_ap","ended", "unknown_popup"]:
