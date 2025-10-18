@@ -126,12 +126,12 @@ class RaidHelper:
             self.driver.execute_script(
                 "arguments[0].scrollIntoView({block: 'nearest', inline: 'nearest'});", element
             )
-            time.sleep(random.uniform(0.1, 0.3)) # Pause as if to locate the element
+            time.sleep(random.uniform(0.1, 0.2)) # Pause as if to locate the element
 
             # Add a small, random "adjustment" scroll. Humans rarely stop perfectly.
             scroll_offset = random.randint(-30, 30)
             self.driver.execute_script(f"window.scrollBy(0, {scroll_offset});")
-            time.sleep(random.uniform(0.2, 0.4)) # A final pause before moving the mouse
+            time.sleep(random.uniform(0.1, 0.2)) # A final pause before moving the mouse
 
         except Exception as e:
             print(f"[!] scrollIntoView failed: {e}")
@@ -371,8 +371,8 @@ class RaidHelper:
             return "next"
         except TimeoutException:
             try:
-                support_level = "Lvl 200"
-                support_name = "Grand"
+                support_level = "Lvl 100"
+                support_name = "Huanglong"
 
                 xpath = f"""
                 //div[contains(@class, 'supporter-summon') and
@@ -421,17 +421,18 @@ class RaidHelper:
         
     def do_raid(self):
         try:
-            # Wait until the attack button is visible and ready
+           # Wait until the attack button is visible and ready
             atk_btn_visible = WebDriverWait(self.driver, 30).until(
                 EC.visibility_of_element_located(
                     (By.CSS_SELECTOR, ".btn-attack-start.display-on")
                 )
             )
+
             print("[✓] Attack button visible")
+
 
             start_time = time.time()
             while time.time() - start_time < 80:
-
                 # If button still active, click full auto
                 try:
                     fullauto_btn = WebDriverWait(self.driver, 5).until(
@@ -439,6 +440,7 @@ class RaidHelper:
                     )
                     self.click_element(fullauto_btn)
                     print("[⚙] Full Auto clicked")
+
                 except TimeoutException:
                     print("[!] Full Auto not found, skipping...")
                 # Refresh to process the next step
@@ -456,7 +458,7 @@ class RaidHelper:
                     print("[!] Attack button not found — retrying...")
                     return "next"
                 self.driver.refresh()
-                time.sleep(1.25)
+                time.sleep(1)
 
         except TimeoutException:
             print("[×] Timeout waiting for attack button — probably not in battle")
@@ -487,7 +489,10 @@ class RaidHelper:
                 print(f"[i] Found {len(raids)} pending raid(s). Clearing the first one.")
                 raid_id = raids[0].get_attribute("data-raid-id")
                 raid_name = raids[0].find_element(By.CSS_SELECTOR, ".txt-raid-name").text.strip()
-                self.see_battle_result_by_id(raid_id,raid_name)
+                try:
+                    self.see_battle_result_by_id(raid_id,raid_name)
+                except:
+                    continue
                 
             print("[i] Returning to the raid search page.")
             self.driver.get("https://game.granbluefantasy.jp/#quest/assist")
